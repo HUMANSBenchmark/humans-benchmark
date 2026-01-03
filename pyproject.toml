@@ -1,0 +1,98 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "HUMANS-Benchmark"
+version = "0.1.0"
+description = "HUMANS: HUman-aligned Minimal Audio evaluatioN Subsets for Large Audio Models"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+keywords = ["audio", "benchmark", "evaluation", "large-audio-models", "speech", "human-preference"]
+authors = [
+    {name = "Anonymous", email = "anonymous@example.com"}
+]
+maintainers = [
+    {name = "Anonymous", email = "anonymous@example.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+dependencies = [
+    # Core dependencies
+    "numpy>=1.21.0",
+    "datasets>=2.14.0",
+    "tqdm>=4.65.0",
+    "soundfile>=0.12.0",
+
+    # API clients
+    "openai>=1.0.0",
+    "google-genai>=0.2.0",
+
+    # Audio and speech processing
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+    "torchcodec>=0.1.0",
+    "librosa>=0.10.0",
+    "pydub>=0.25.0",
+    "speech_metrics>=0.2.0",
+
+    # NLP and transformers
+    "transformers>=4.30.0",
+    "nltk>=3.8.0",
+
+    # Evaluation metrics
+    "qa_metrics>=0.2.0",
+    "intervaltree>=3.1.0",
+    "instruction_following_eval @ git+https://github.com/josejg/instruction_following_eval.git",
+
+    # Math and utilities
+    "scipy>=1.7.0",
+    "regex>=2022.1.18",
+
+    # Optional but recommended
+    "python-dotenv>=0.19.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=22.0.0",
+    "flake8>=6.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/HUMANSBenchmark/humans-benchmark"
+Documentation = "https://github.com/HUMANSBenchmark/humans-benchmark"
+Repository = "https://github.com/HUMANSBenchmark/humans-benchmark"
+"Bug Tracker" = "https://github.com/HUMANSBenchmark/humans-benchmark/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 120
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
