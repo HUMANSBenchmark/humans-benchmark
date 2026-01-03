@@ -1,4 +1,4 @@
-# HUMANS Benchmark (For Anynomous Submission)
+# HUMANS Benchmark (For Anonymous Submission)
 
 **HUMANS: HUman-aligned Minimal Audio evaluatioN Subsets for Large Audio Models**
 
@@ -157,9 +157,11 @@ evaluator = HUMANSEvaluator(
 
 - `audio_dir` (str): Directory to save temporary audio files during evaluation
   - Default: `"humans-audio"`
+  - Audio files are stored here for processing by metrics
 
 - `delete_audio_on_cleanup` (bool): Whether to automatically delete audio directory when evaluator is destroyed
   - Default: `False`
+  - Set to `True` to automatically clean up audio files after evaluation
 
 #### Evaluation
 
@@ -175,9 +177,9 @@ results = evaluator.evaluate(
 
 **Parameters:**
 
-- `predict_fn` (Callable): Your model's prediction function
+- `predict_fn` (Callable): Your model's prediction function (see below for detailed specification)
   - **Required**
-  - Signature: `predict_fn(messages, audio_output, text_output, tools=None, tool_choice="auto") -> ModelResponse`
+  - Function signature: `predict_fn(messages, audio_output, text_output, tools=None, tool_choice="auto") -> ModelResponse`
 
 - `mode` (str): Evaluation mode
   - `"human"`: Compute human preference score only (0-1 scale)
@@ -188,28 +190,48 @@ results = evaluator.evaluate(
   - Default: `True`
 
 - `results_path` (Optional[str]): Path to save the results JSON file
-  - Default: `None` (auto-generates filename with timestamp)
+  - Default: `None` (auto-generates filename with timestamp: `humans_results_YYYYMMDD_HHMMSS.json`)
 
 - `verbose` (bool): Show progress bar and logging during evaluation
   - Default: `True`
 
 **Returns:**
 
+A dictionary containing:
+
 ```python
 {
-    "human_score": 0.75,              # Human preference score [0, 1]
-    "benchmark_score": 0.68,          # Full benchmark score
-    "num_items": 50,                  # Number of evaluation items
-    "subset": "n50",                  # Subset used
-    "audio_dir": "/path/to/audio",    # Directory containing audio files
-    "results_path": "/path/to/results.json",
-    "details": [...]                  # Per-item evaluation details
+    "human_score": 0.75,              # Human preference score [0, 1] (if mode="human" or "both")
+    "benchmark_score": 0.68,           # Full benchmark score (if mode="benchmark" or "both")
+    "num_items": 50,                   # Number of evaluation items
+    "subset": "n50",                   # Subset used
+    "audio_dir": "/path/to/audio",     # Directory containing audio files
+    "results_path": "/path/to/results.json",  # Path to saved results (if save_results=True)
+    "details": [                       # Per-item evaluation details
+        {
+            "item_id": "item_001",
+            "task": "speech_recognition",
+            "dataset": "dynamic_superb",
+            "metric": "word_error_rate",
+            "score": 0.85,
+            "audio_output_expected": False,
+            "text_output_expected": True,
+            "latency": 1.23,           # Response time in seconds
+            "metadata": {              # Task-specific metadata
+                "error_type": None,
+                "reference": "ground truth text"
+            }
+        },
+        # ... more items
+    ]
 }
 ```
 
 ### Prediction Function Interface
 
-Your `predict_fn` must implement this interface:
+#### predict_fn Specification
+
+Your `predict_fn` must implement the following interface:
 
 ```python
 def predict_fn(
@@ -220,20 +242,25 @@ def predict_fn(
     tool_choice: str = "auto"
 ) -> ModelResponse:
     """
+    Model prediction function for HUMANS benchmark.
+
     Args:
-        messages: List of conversation messages
+        messages: List of conversation messages (Message objects)
         audio_output: Whether the task expects audio output
         text_output: Whether the task expects text output
-        tools: Optional list of tool/function definitions (OpenAI format)
+        tools: Optional list of tool/function definitions for function calling tasks
         tool_choice: Tool choice strategy - "auto", "required", or "none"
 
     Returns:
-        ModelResponse with text and/or audio output and tool_calls
+        ModelResponse object with model outputs
     """
+    # Your model inference logic here
     pass
 ```
 
-#### Message Format
+#### Input: messages
+
+A list of `Message` objects representing the conversation history:
 
 ```python
 @dataclass
@@ -241,35 +268,115 @@ class Message:
     role: Literal["user", "assistant", "system", "tool"]
     text_input: Optional[str] = None           # Text content
     audio_path: Optional[str] = None           # Path to audio file (.wav)
-    tool_calls: Optional[List[Dict]] = None    # Function calls (OpenAI format)
-    tool_call_id: Optional[str] = None         # ID for OpenAI API models
-    name: Optional[str] = None                 # Function name (for Gemini, etc.)
+    tool_calls: Optional[List[Dict]] = None    # Function calls from assistant (OpenAI format)
+    tool_call_id: Optional[str] = None         # ID matching the tool call (for OpenAI API models)
+    name: Optional[str] = None                 # Function name (for Gemini and other models)
 ```
 
-#### ModelResponse Format
+**Field Descriptions:**
+
+- `tool_call_id`: Used in tool response messages to match back to the original function call. Required for OpenAI API models (matches the `"id"` field from the assistant's tool_calls)
+- `name`: Function name used in tool response messages. Required for models like Gemini that identify function responses by name instead of ID
+
+**Message Examples:**
+
+```python
+# User message with text only
+Message(role="user", text_input="What is the weather?")
+
+# User message with audio input
+Message(role="user", text_input="Transcribe this:", audio_path="/path/to/audio.wav")
+
+# Assistant message with tool calls (OpenAI format)
+Message(role="assistant", text_input="Let me check the weather",
+        tool_calls=[{
+            "id": "call_123",
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "arguments": {"location": "San Francisco"}  # Dictionary, not JSON string!
+            }
+        }])
+
+# Tool response message (includes both tool_call_id and name for compatibility)
+Message(role="tool", text_input="Sunny, 72°F",
+        tool_call_id="call_123",  # For OpenAI models
+        name="get_weather")        # For Gemini and similar models
+```
+
+#### Input: audio_output and text_output
+
+These boolean flags indicate what type of output the task expects:
+
+- `audio_output=True`: Task requires audio response (e.g., speech synthesis, voice conversion)
+- `text_output=True`: Task requires text response (e.g., speech recognition, classification)
+- Both can be `True` for tasks requiring both modalities
+
+#### Input: tools and tool_choice
+
+For function calling tasks, the benchmark provides tool definitions and expects responses in **OpenAI API compatible format**.
+
+- `tools`: List of available function definitions following **OpenAI function calling format**:
+  ```python
+  [
+      {
+          "type": "function",
+          "function": {
+              "name": "function_name",
+              "description": "Function description",
+              "parameters": {
+                  "type": "object",
+                  "properties": {
+                      "param1": {"type": "string", "description": "..."},
+                      # ... more parameters
+                  },
+                  "required": ["param1"]
+              }
+          }
+      }
+  ]
+  ```
+
+  **Note:** This format is compatible with OpenAI API. If your model uses a different format (e.g., Google's function calling format), you'll need to convert between formats in your `predict_fn`.
+
+- `tool_choice`: Strategy for function calling (OpenAI API compatible)
+  - `"auto"`: Model decides whether to call functions
+  - `"required"`: Model must call at least one function
+  - `"none"`: Model should not call functions
+
+#### Output: ModelResponse
+
+Return a `ModelResponse` object:
 
 ```python
 @dataclass
 class ModelResponse:
     text: str                                  # Text output (required, use "" if none)
     audio_path: Optional[str] = None           # Path to generated audio file (.wav)
-    tool_calls: Optional[List[Dict]] = None    # Function calls (OpenAI format)
+    tool_calls: Optional[List[Dict]] = None    # Function calls (see format below)
     metadata: Optional[Dict] = None            # Optional metadata
 ```
 
-#### Function Call Format (OpenAI Compatible)
+**Function Call Format (IMPORTANT - READ CAREFULLY):**
 
-When your model calls functions, return them in OpenAI API compatible format:
+When your model calls functions, return them in **OpenAI API compatible format**. This is a specific format that you must follow exactly:
 
 ```python
 tool_calls = [
     {
-        "id": "call_abc123",              # Unique call ID (for OpenAI models)
-        "type": "function",                # Always "function"
+        "id": "call_abc123",              # Unique call ID (optional) - used by your model to match tool
+                                           # responses back to the original call (required in
+                                           # OpenAI API). Some models like Gemini use the function
+                                           # name instead of ID for matching.
+
+        "type": "function",                # Always "function" (required)
+
         "function": {
-            "name": "function_name",       # Function name (for all models)
-            "arguments": {                 # MUST be a dictionary, NOT a JSON string!
-                "param1": "value1",
+            "name": "function_name",       # Function name (string) - also used for matching tool
+                                           # responses in models like Gemini
+
+            "arguments": {                 # Arguments as a DICTIONARY (NOT a JSON string!)
+                "param1": "value1",        # Each argument as a key-value pair
                 "param2": 42
             }
         }
@@ -277,10 +384,14 @@ tool_calls = [
 ]
 ```
 
-**Critical Notes:**
-- `arguments` must be a **Python dictionary**, NOT a JSON string
-- Include both `id` (for OpenAI) and `name` (for Gemini) for maximum compatibility
-- The benchmark uses OpenAI function calling format for tools
+
+**Important Notes:**
+
+- **For OpenAI models:** The `"id"` field is used to match tool responses back to the original function call
+- **For Google Gemini and similar models:** The `"name"` field is used for matching instead of `"id"`. We include both fields to support different model architectures
+- **Arguments format:** The `"arguments"` field MUST be a Python dictionary, NOT a JSON string. If your model API returns arguments as a JSON string (like OpenAI does), parse it with `json.loads()` before returning
+- **Multi-turn function calling:** The evaluator automatically handles the conversation loop - you don't need to implement this yourself
+- **Function responses:** The evaluator provides function responses for testing purposes
 
 ---
 
@@ -384,5 +495,3 @@ This benchmark builds upon several existing audio evaluation frameworks:
   year={2025}
 }
 ```
-
-For detailed documentation on the prediction function interface, function calling format, and common mistakes to avoid, see the [dataset README](dataset.readme) or visit our [HuggingFace dataset page](https://huggingface.co/datasets/HUMANSBenchmark/humans-benchmark).
